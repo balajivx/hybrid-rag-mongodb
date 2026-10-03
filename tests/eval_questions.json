@@ -1,0 +1,42 @@
+[
+  {
+    "q": "Who scored the winning goal in the 2010 World Cup final?",
+    "type": "text",
+    "expect": ["Iniesta"]
+  },
+  {
+    "q": "How many goals did Brazil score at the 2002 World Cup?",
+    "type": "table",
+    "expect": ["18"]
+  },
+  {
+    "q": "Which players in Argentina's 2022 squad were born in 2000 or later?",
+    "type": "table",
+    "expect": ["Álvarez", "Almada", "Fernández"]
+  },
+  {
+    "q": "How many knockout and second-round matches did Germany play, and how many did it win?",
+    "type": "table",
+    "expect": ["35", "24"]
+  },
+  {
+    "q": "Which World Cup finals were decided on penalties, and what were the shootout scores?",
+    "type": "table",
+    "expect": ["3–2", "5–3", "4–2"]
+  },
+  {
+    "q": "How far did the 2010 Golden Ball winner's team go, and how many goals did it score?",
+    "type": "both",
+    "expect": ["Fourth", "11"]
+  },
+  {
+    "q": "Who coached the 2006 champions, and how many goals did they concede in 2006?",
+    "type": "both",
+    "expect": ["Lippi", "2"]
+  },
+  {
+    "q": "In how many of the twelve tournaments did the ten nations fail to qualify in total?",
+    "type": "table",
+    "expect": ["20"]
+  }
+]
