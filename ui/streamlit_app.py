@@ -1,4 +1,11 @@
+import sys
 import os
+
+# Ensure the root project folder is always in sys.path
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
 import time
 import requests
 import streamlit as st
@@ -207,9 +214,7 @@ div[data-testid="stExpander"] {
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------
-# API / Standalone Helper Functions
-# ---------------------------------------------------------
+IMPORT_ERROR = None
 try:
     from app.ingest import ingest_pdf
     from app.agents import hybrid_app
@@ -217,8 +222,9 @@ try:
     from app.db import documents, tables_meta, table_rows, text_chunks, baseline_chunks
     from app.retrieval import table_catalog
     HAS_LOCAL_MODULES = True
-except Exception:
+except Exception as _e:
     HAS_LOCAL_MODULES = False
+    IMPORT_ERROR = str(_e)
 
 def fetch_documents():
     try:
@@ -271,12 +277,15 @@ def fetch_tables_meta(doc_id):
     return []
 
 def run_ingest(file_name, file_bytes):
+    api_err = None
     try:
         r = requests.post(f"{API}/ingest", timeout=900, files={"file": (file_name, file_bytes, "application/pdf")})
         if r.status_code == 200:
             return r.json()
-    except Exception:
-        pass
+        api_err = f"HTTP {r.status_code}: {r.text}"
+    except Exception as e:
+        api_err = str(e)
+
     if HAS_LOCAL_MODULES:
         import tempfile
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
@@ -284,10 +293,12 @@ def run_ingest(file_name, file_bytes):
             tmp_path = tmp.name
         try:
             return ingest_pdf(tmp_path, file_name)
+        except Exception as local_err:
+            raise RuntimeError(f"Ingestion failed: {local_err}")
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-    raise RuntimeError("Could not connect to API or local ingestion module.")
+    raise RuntimeError(f"Could not connect to API ({api_err}) and local modules failed to load (Error: {IMPORT_ERROR}). Please verify MONGODB_URI and GEMINI_API_KEY.")
 
 def run_baseline(doc_id, question):
     try:
