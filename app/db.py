@@ -1,7 +1,11 @@
 from pymongo import MongoClient, ASCENDING
+import certifi
 from app.config import MONGODB_URI, DB_NAME
 
-client = MongoClient(MONGODB_URI)
+try:
+    client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
+except Exception:
+    client = MongoClient(MONGODB_URI)
 db = client[DB_NAME]
 
 documents = db["documents"]         # one document per ingested PDF
