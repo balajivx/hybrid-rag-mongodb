@@ -208,31 +208,115 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------
-# API Helper Functions
+# API / Standalone Helper Functions
 # ---------------------------------------------------------
+try:
+    from app.ingest import ingest_pdf
+    from app.agents import hybrid_app
+    from app.baseline import baseline_answer
+    from app.db import documents, tables_meta, table_rows, text_chunks, baseline_chunks
+    from app.retrieval import table_catalog
+    HAS_LOCAL_MODULES = True
+except Exception:
+    HAS_LOCAL_MODULES = False
+
 def fetch_documents():
     try:
-        r = requests.get(f"{API}/documents", timeout=10)
+        r = requests.get(f"{API}/documents", timeout=3)
         if r.status_code == 200:
             return r.json()
     except Exception:
         pass
+    if HAS_LOCAL_MODULES:
+        try:
+            docs = list(documents.find({}, {"_id": 1, "filename": 1, "tables": 1, "table_rows": 1, "text_chunks": 1, "baseline_chunks": 1, "ingested_at": 1}))
+            return [
+                {
+                    "doc_id": d["_id"],
+                    "filename": d.get("filename", "Unknown"),
+                    "tables": d.get("tables", 0),
+                    "table_rows": d.get("table_rows", 0),
+                    "text_chunks": d.get("text_chunks", 0),
+                    "baseline_chunks": d.get("baseline_chunks", 0),
+                    "ingested_at": str(d.get("ingested_at", ""))
+                }
+                for d in docs
+            ]
+        except Exception:
+            pass
     return []
 
 def delete_doc(doc_id):
     try:
-        requests.delete(f"{API}/documents/{doc_id}", timeout=10)
-    except Exception as e:
-        st.error(f"Failed to delete document: {e}")
+        requests.delete(f"{API}/documents/{doc_id}", timeout=3)
+        return
+    except Exception:
+        pass
+    if HAS_LOCAL_MODULES:
+        for coll in (documents, tables_meta, table_rows, text_chunks, baseline_chunks):
+            if coll == documents:
+                coll.delete_one({"_id": doc_id})
+            else:
+                coll.delete_many({"doc_id": doc_id})
 
 def fetch_tables_meta(doc_id):
     try:
-        r = requests.get(f"{API}/documents/{doc_id}/tables", timeout=10)
+        r = requests.get(f"{API}/documents/{doc_id}/tables", timeout=3)
         if r.status_code == 200:
             return r.json()
     except Exception:
         pass
+    if HAS_LOCAL_MODULES:
+        return table_catalog(doc_id)
     return []
+
+def run_ingest(file_name, file_bytes):
+    try:
+        r = requests.post(f"{API}/ingest", timeout=900, files={"file": (file_name, file_bytes, "application/pdf")})
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
+    if HAS_LOCAL_MODULES:
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(file_bytes)
+            tmp_path = tmp.name
+        try:
+            return ingest_pdf(tmp_path, file_name)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+    raise RuntimeError("Could not connect to API or local ingestion module.")
+
+def run_baseline(doc_id, question):
+    try:
+        r = requests.post(f"{API}/ask/baseline", json={"doc_id": doc_id, "question": question}, timeout=300)
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
+    if HAS_LOCAL_MODULES:
+        return baseline_answer(question, doc_id)
+    return {"answer": "Error: Unable to connect to backend", "chunks": []}
+
+def run_hybrid(doc_id, question):
+    try:
+        r = requests.post(f"{API}/ask/hybrid", json={"doc_id": doc_id, "question": question}, timeout=300)
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
+    if HAS_LOCAL_MODULES:
+        s = hybrid_app.invoke({"question": question, "doc_id": doc_id})
+        return {
+            "answer": s["answer"],
+            "route": s["route"],
+            "route_reason": s.get("route_reason"),
+            "table_result": s.get("table_result"),
+            "text_result": s.get("text_result", [])
+        }
+    return {"answer": "Error: Unable to connect to backend", "route": "error", "route_reason": "Backend unavailable"}
 
 
 # ---------------------------------------------------------
@@ -274,13 +358,7 @@ with st.sidebar:
             for idx, uploaded_file in enumerate(uploaded_files):
                 status_text.text(f"Ingesting {uploaded_file.name} ({idx+1}/{total_files})...")
                 try:
-                    r = requests.post(
-                        f"{API}/ingest",
-                        timeout=900,
-                        files={"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
-                    )
-                    r.raise_for_status()
-                    res = r.json()
+                    res = run_ingest(uploaded_file.name, uploaded_file.getvalue())
                     st.toast(f"✅ Ingested {uploaded_file.name}", icon="📄")
                 except Exception as err:
                     st.error(f"Error ingesting {uploaded_file.name}: {err}")
@@ -419,7 +497,7 @@ else:
 
             with st.spinner("Executing conventional vector retrieval..."):
                 try:
-                    baseline_res = requests.post(f"{API}/ask/baseline", json=query_body, timeout=300).json()
+                    baseline_res = run_baseline(current_doc["doc_id"], question)
                 except Exception as e:
                     baseline_res = {"answer": f"Error: {e}", "chunks": []}
 
@@ -442,7 +520,7 @@ else:
 
             with st.spinner("Routing & executing LangGraph agents..."):
                 try:
-                    hybrid_res = requests.post(f"{API}/ask/hybrid", json=query_body, timeout=300).json()
+                    hybrid_res = run_hybrid(current_doc["doc_id"], question)
                 except Exception as e:
                     hybrid_res = {"answer": f"Error: {e}", "route": "error", "route_reason": str(e)}
 
