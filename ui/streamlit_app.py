@@ -350,23 +350,28 @@ with st.sidebar:
     )
 
     if uploaded_files:
-        if st.button("🚀 Ingest All Selected PDFs", type="primary", use_container_width=True):
+        btn_label = f"🚀 Ingest {len(uploaded_files)} PDF{'s' if len(uploaded_files) > 1 else ''}"
+        if st.button(btn_label, type="primary", use_container_width=True):
             progress_bar = st.progress(0)
             status_text = st.empty()
             total_files = len(uploaded_files)
+            success_count = 0
             
             for idx, uploaded_file in enumerate(uploaded_files):
-                status_text.text(f"Ingesting {uploaded_file.name} ({idx+1}/{total_files})...")
+                status_text.markdown(f"⏳ **Ingesting:** `{uploaded_file.name}` ({idx+1}/{total_files})...")
                 try:
                     res = run_ingest(uploaded_file.name, uploaded_file.getvalue())
                     st.toast(f"✅ Ingested {uploaded_file.name}", icon="📄")
+                    st.session_state["doc"] = res
+                    success_count += 1
                 except Exception as err:
-                    st.error(f"Error ingesting {uploaded_file.name}: {err}")
+                    st.error(f"❌ Error ingesting `{uploaded_file.name}`:\n{err}")
                 progress_bar.progress((idx + 1) / total_files)
             
-            status_text.text("✨ Ingestion Complete!")
-            time.sleep(1)
-            st.rerun()
+            if success_count > 0:
+                status_text.markdown(f"✨ **Ingested {success_count}/{total_files} file(s) successfully!**")
+                time.sleep(1.5)
+                st.rerun()
 
     st.markdown("---")
     st.markdown("### 📚 Knowledge Vault")
