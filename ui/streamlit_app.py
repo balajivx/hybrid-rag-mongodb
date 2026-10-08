@@ -276,10 +276,13 @@ def fetch_tables_meta(doc_id):
         return table_catalog(doc_id)
     return []
 
-def run_ingest(file_name, file_bytes):
+def run_ingest(file_name, file_bytes, api_key=None):
     api_err = None
+    headers = {}
+    if api_key:
+        headers["x-gemini-api-key"] = api_key
     try:
-        r = requests.post(f"{API}/ingest", timeout=900, files={"file": (file_name, file_bytes, "application/pdf")})
+        r = requests.post(f"{API}/ingest", timeout=900, files={"file": (file_name, file_bytes, "application/pdf")}, headers=headers)
         if r.status_code == 200:
             return r.json()
         api_err = f"HTTP {r.status_code}: {r.text}"
@@ -292,7 +295,7 @@ def run_ingest(file_name, file_bytes):
             tmp.write(file_bytes)
             tmp_path = tmp.name
         try:
-            return ingest_pdf(tmp_path, file_name)
+            return ingest_pdf(tmp_path, file_name, api_key=api_key)
         except Exception as local_err:
             raise RuntimeError(f"Ingestion failed: {local_err}")
         finally:
@@ -300,26 +303,26 @@ def run_ingest(file_name, file_bytes):
                 os.remove(tmp_path)
     raise RuntimeError(f"Could not connect to API ({api_err}) and local modules failed to load (Error: {IMPORT_ERROR}). Please verify MONGODB_URI and GEMINI_API_KEY.")
 
-def run_baseline(doc_id, question):
+def run_baseline(doc_id, question, api_key=None):
     try:
-        r = requests.post(f"{API}/ask/baseline", json={"doc_id": doc_id, "question": question}, timeout=300)
+        r = requests.post(f"{API}/ask/baseline", json={"doc_id": doc_id, "question": question, "api_key": api_key}, timeout=300)
         if r.status_code == 200:
             return r.json()
     except Exception:
         pass
     if HAS_LOCAL_MODULES:
-        return baseline_answer(question, doc_id)
+        return baseline_answer(question, doc_id, api_key=api_key)
     return {"answer": "Error: Unable to connect to backend", "chunks": []}
 
-def run_hybrid(doc_id, question):
+def run_hybrid(doc_id, question, api_key=None):
     try:
-        r = requests.post(f"{API}/ask/hybrid", json={"doc_id": doc_id, "question": question}, timeout=300)
+        r = requests.post(f"{API}/ask/hybrid", json={"doc_id": doc_id, "question": question, "api_key": api_key}, timeout=300)
         if r.status_code == 200:
             return r.json()
     except Exception:
         pass
     if HAS_LOCAL_MODULES:
-        s = hybrid_app.invoke({"question": question, "doc_id": doc_id})
+        s = hybrid_app.invoke({"question": question, "doc_id": doc_id, "api_key": api_key})
         return {
             "answer": s["answer"],
             "route": s["route"],
@@ -350,6 +353,31 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
+    # User-Provided Google Gemini API Key Input
+    st.markdown("### 🔑 Google Gemini API Key")
+    active_api_key_input = st.text_input(
+        "Google Gemini API Key",
+        value=st.session_state.get("gemini_api_key", os.getenv("GEMINI_API_KEY", "")),
+        type="password",
+        placeholder="Enter AI Studio Key (AIzaSy...)",
+        help="Enter your Google Gemini API Key. It will be used for your requests and embeddings.",
+        label_visibility="collapsed"
+    )
+    if active_api_key_input:
+        st.session_state["gemini_api_key"] = active_api_key_input.strip()
+        st.markdown("""
+        <div style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: #34d399; margin-top: -6px; margin-bottom: 14px;">
+            <span>●</span> API Key Configured
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.session_state["gemini_api_key"] = ""
+        st.markdown("""
+        <div style="font-size: 0.75rem; color: #f59e0b; margin-top: -6px; margin-bottom: 14px;">
+            ⚠️ No API key set. <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color: #60a5fa; text-decoration: underline;">Get free key</a>
+        </div>
+        """, unsafe_allow_html=True)
+
     st.markdown("### 📁 Upload & Ingest Documents")
     st.caption("Upload one or multiple PDF documents with tables and narrative prose.")
 
@@ -363,6 +391,7 @@ with st.sidebar:
     if uploaded_files:
         btn_label = f"🚀 Ingest {len(uploaded_files)} PDF{'s' if len(uploaded_files) > 1 else ''}"
         if st.button(btn_label, type="primary", use_container_width=True):
+            user_key = st.session_state.get("gemini_api_key", "").strip() or None
             progress_bar = st.progress(0)
             status_text = st.empty()
             total_files = len(uploaded_files)
@@ -371,7 +400,7 @@ with st.sidebar:
             for idx, uploaded_file in enumerate(uploaded_files):
                 status_text.markdown(f"⏳ **Ingesting:** `{uploaded_file.name}` ({idx+1}/{total_files})...")
                 try:
-                    res = run_ingest(uploaded_file.name, uploaded_file.getvalue())
+                    res = run_ingest(uploaded_file.name, uploaded_file.getvalue(), api_key=user_key)
                     st.toast(f"✅ Ingested {uploaded_file.name}", icon="📄")
                     st.session_state["doc"] = res
                     success_count += 1
@@ -499,7 +528,9 @@ else:
     )
 
     if question:
-        query_body = {"doc_id": current_doc["doc_id"], "question": question}
+        user_key = st.session_state.get("gemini_api_key", "").strip() or None
+        if not user_key and not os.getenv("GEMINI_API_KEY"):
+            st.warning("⚠️ No Gemini API key detected. Please enter your Google Gemini API Key in the left sidebar to generate embeddings and answers.")
 
         col_left, col_right = st.columns(2)
 
@@ -513,7 +544,7 @@ else:
 
             with st.spinner("Executing conventional vector retrieval..."):
                 try:
-                    baseline_res = run_baseline(current_doc["doc_id"], question)
+                    baseline_res = run_baseline(current_doc["doc_id"], question, api_key=user_key)
                 except Exception as e:
                     baseline_res = {"answer": f"Error: {e}", "chunks": []}
 
@@ -536,7 +567,7 @@ else:
 
             with st.spinner("Routing & executing LangGraph agents..."):
                 try:
-                    hybrid_res = run_hybrid(current_doc["doc_id"], question)
+                    hybrid_res = run_hybrid(current_doc["doc_id"], question, api_key=user_key)
                 except Exception as e:
                     hybrid_res = {"answer": f"Error: {e}", "route": "error", "route_reason": str(e)}
 

@@ -1,8 +1,8 @@
 import os
 import shutil
 import tempfile
-from typing import List
-from fastapi import FastAPI, File, UploadFile
+from typing import List, Optional
+from fastapi import FastAPI, File, UploadFile, Header, Form
 from pydantic import BaseModel
 from app.db import documents, tables_meta, table_rows, text_chunks, baseline_chunks
 from app.ingest import ingest_pdf
@@ -15,6 +15,7 @@ api = FastAPI(title="Hybrid RAG on MongoDB")
 class AskRequest(BaseModel):
     doc_id: str
     question: str
+    api_key: Optional[str] = None
 
 @api.get("/documents")
 def list_documents():
@@ -46,25 +47,25 @@ def delete_document(doc_id: str):
     return {"status": "deleted", "doc_id": doc_id}
 
 @api.post("/ingest")
-def ingest(file: UploadFile = File(...)):
+def ingest(file: UploadFile = File(...), api_key: Optional[str] = Header(None, alias="x-gemini-api-key")):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         shutil.copyfileobj(file.file, tmp)
         path = tmp.name
     try:
-        return ingest_pdf(path, file.filename)
+        return ingest_pdf(path, file.filename, api_key=api_key)
     finally:
         if os.path.exists(path):
             os.remove(path)
 
 @api.post("/ingest-multiple")
-def ingest_multiple(files: List[UploadFile] = File(...)):
+def ingest_multiple(files: List[UploadFile] = File(...), api_key: Optional[str] = Header(None, alias="x-gemini-api-key")):
     summaries = []
     for f in files:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             shutil.copyfileobj(f.file, tmp)
             path = tmp.name
         try:
-            summary = ingest_pdf(path, f.filename)
+            summary = ingest_pdf(path, f.filename, api_key=api_key)
             summaries.append(summary)
         finally:
             if os.path.exists(path):
@@ -73,7 +74,7 @@ def ingest_multiple(files: List[UploadFile] = File(...)):
 
 @api.post("/ask/hybrid")
 def ask_hybrid(req: AskRequest):
-    s = hybrid_app.invoke({"question": req.question, "doc_id": req.doc_id})
+    s = hybrid_app.invoke({"question": req.question, "doc_id": req.doc_id, "api_key": req.api_key})
     return {
         "answer": s["answer"],
         "route": s["route"],
@@ -84,7 +85,7 @@ def ask_hybrid(req: AskRequest):
 
 @api.post("/ask/baseline")
 def ask_baseline(req: AskRequest):
-    return baseline_answer(req.question, req.doc_id)
+    return baseline_answer(req.question, req.doc_id, api_key=req.api_key)
 
 @api.get("/health")
 def health():

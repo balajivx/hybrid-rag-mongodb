@@ -1,11 +1,10 @@
 import json
 import time
+import os
 import re
 from google import genai
 from google.genai import types
 from app.config import GEMINI_API_KEY, LLM_MODEL, EMBED_MODEL, EMBED_DIM
-
-client = genai.Client(api_key=GEMINI_API_KEY)
 
 FALLBACK_LLM_MODELS = [
     LLM_MODEL,
@@ -13,6 +12,13 @@ FALLBACK_LLM_MODELS = [
     "gemini-3.5-flash",
     "gemini-flash-lite-latest",
 ]
+
+def get_client(api_key=None):
+    """Dynamically get or create a Google GenAI client with active API key."""
+    key = api_key or os.getenv("GEMINI_API_KEY") or GEMINI_API_KEY
+    if not key:
+        raise ValueError("Gemini API Key is missing. Please provide a valid Google Gemini API Key in the UI or configuration.")
+    return genai.Client(api_key=key)
 
 def _extract_retry_delay(exc, default_delay=5.0):
     """Extract recommended retry delay from API error message or details."""
@@ -33,10 +39,11 @@ def _extract_retry_delay(exc, default_delay=5.0):
                 delay = default_delay
     return min(max(delay, 2.0), 45.0)
 
-def embed(texts, task="RETRIEVAL_DOCUMENT", batch=50, max_retries=5):
-    """Embed a list of strings with automatic rate-limit backoff."""
+def embed(texts, task="RETRIEVAL_DOCUMENT", batch=50, max_retries=5, api_key=None):
+    """Embed a list of strings with dynamic API key and automatic rate-limit backoff."""
     if not texts:
         return []
+    client = get_client(api_key)
     vectors = []
     for i in range(0, len(texts), batch):
         batch_texts = texts[i:i + batch]
@@ -60,8 +67,9 @@ def embed(texts, task="RETRIEVAL_DOCUMENT", batch=50, max_retries=5):
                 time.sleep(delay)
     return vectors
 
-def generate(prompt, json_mode=False, max_retries=3):
-    """Generate LLM content with multi-model fallback and rate-limit backoff."""
+def generate(prompt, json_mode=False, max_retries=3, api_key=None):
+    """Generate LLM content with dynamic API key, multi-model fallback, and rate-limit backoff."""
+    client = get_client(api_key)
     cfg = types.GenerateContentConfig(
         temperature=0,
         response_mime_type="application/json" if json_mode else "text/plain",

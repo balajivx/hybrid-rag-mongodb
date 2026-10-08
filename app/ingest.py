@@ -5,7 +5,7 @@ from app.pdf_parser import parse_pdf, merge_multipage
 from app.table_store import save_tables
 from app.text_store import save_chunks
 
-def ingest_pdf(path, filename="document.pdf"):
+def ingest_pdf(path, filename="document.pdf", api_key=None):
     with open(path, "rb") as f:
         doc_id = hashlib.sha1(f.read()).hexdigest()[:16]
 
@@ -15,8 +15,8 @@ def ingest_pdf(path, filename="document.pdf"):
     text_blocks, raw_tables, page_texts = parse_pdf(path)
     merged = merge_multipage(raw_tables)
     n_rows = save_tables(doc_id, merged)
-    n_chunks = save_chunks(doc_id, text_blocks, text_chunks)
-    n_base = save_chunks(doc_id, page_texts, baseline_chunks)
+    n_chunks = save_chunks(doc_id, text_blocks, text_chunks, api_key=api_key)
+    n_base = save_chunks(doc_id, page_texts, baseline_chunks, api_key=api_key)
 
     summary = {
         "doc_id": doc_id,

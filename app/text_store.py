@@ -15,11 +15,11 @@ def chunk_text(blocks, size=1200, overlap=200):
             chunks.append({"page": b["page"], "text": current.strip()})
     return chunks
 
-def save_chunks(doc_id, blocks, collection):
+def save_chunks(doc_id, blocks, collection, api_key=None):
     chunks = chunk_text(blocks)
     if not chunks:
         return 0
-    vectors = embed([c["text"] for c in chunks])
+    vectors = embed([c["text"] for c in chunks], api_key=api_key)
     docs = [
         {
             "doc_id": doc_id,

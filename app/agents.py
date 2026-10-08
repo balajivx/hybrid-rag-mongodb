@@ -14,6 +14,7 @@ class QAState(TypedDict, total=False):
     text_result: list
     table_result: dict
     answer: str
+    api_key: str
 
 def format_catalog(catalog):
     lines = []
@@ -26,8 +27,11 @@ def format_catalog(catalog):
 
 def router_node(state):
     catalog = format_catalog(table_catalog(state["doc_id"]))
-    out = generate(prompts.ROUTER.format(catalog=catalog,
-                                         question=state["question"]), json_mode=True)
+    out = generate(
+        prompts.ROUTER.format(catalog=catalog, question=state["question"]),
+        json_mode=True,
+        api_key=state.get("api_key")
+    )
     route = out.get("route", "both")
     return {
         "route": route if route in ("table", "text", "both") else "both",
@@ -35,7 +39,7 @@ def router_node(state):
     }
 
 def rag_node(state):
-    hits = vector_search(text_chunks, state["question"], state["doc_id"], k=6)
+    hits = vector_search(text_chunks, state["question"], state["doc_id"], k=6, api_key=state.get("api_key"))
     return {"text_result": hits}
 
 def table_node(state, max_attempts=3):
@@ -46,10 +50,16 @@ def table_node(state, max_attempts=3):
         context = f"\nContext from the narrative (use it to resolve names):\n{ctx}\n"
     feedback, attempts = "", []
     for _ in range(max_attempts):
-        plan = generate(prompts.TABLE.format(catalog=catalog, context=context,
-                                             feedback=feedback,
-                                             question=state["question"]),
-                        json_mode=True)
+        plan = generate(
+            prompts.TABLE.format(
+                catalog=catalog,
+                context=context,
+                feedback=feedback,
+                question=state["question"]
+            ),
+            json_mode=True,
+            api_key=state.get("api_key")
+        )
         try:
             rows = run_table_pipeline(state["doc_id"], plan["table_id"], plan["pipeline"])
             attempts.append({"plan": plan, "rows": len(rows)})
@@ -73,11 +83,14 @@ def combiner_node(state):
         }, ensure_ascii=False, default=str)
     text_ev = "\n\n".join(f'(p. {h["page"]}) {h["text"]}'
                           for h in state.get("text_result", [])) or "(not used)"
-    answer = generate(prompts.COMBINER.format(
-        question=state["question"],
-        table_evidence=table_ev,
-        text_evidence=text_ev
-    ))
+    answer = generate(
+        prompts.COMBINER.format(
+            question=state["question"],
+            table_evidence=table_ev,
+            text_evidence=text_ev
+        ),
+        api_key=state.get("api_key")
+    )
     return {"answer": answer}
 
 def after_router(state):

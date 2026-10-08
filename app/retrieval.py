@@ -12,8 +12,8 @@ BLOCKED_OPERATORS = {
     "$lookup", "$unionWith"
 }
 
-def vector_search(collection, question, doc_id, k=6):
-    qv = embed([question], task="RETRIEVAL_QUERY")[0]
+def vector_search(collection, question, doc_id, k=6, api_key=None):
+    qv = embed([question], task="RETRIEVAL_QUERY", api_key=api_key)[0]
     pipeline = [
         {"$vectorSearch": {
             "index": VECTOR_INDEX, "path": "embedding", "queryVector": qv,
