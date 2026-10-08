@@ -82,19 +82,29 @@ This project implements a multi-agent Hybrid Retrieval-Augmented Generation (RAG
 
 ### 2.5 API & UI (`app/api.py`, `ui/streamlit_app.py`)
 - **FastAPI**:
-  - `POST /ingest`: Accepts PDF file upload, runs parsing & embedding, returns document summary.
-  - `POST /ask/hybrid`: Executes multi-agent LangGraph workflow.
-  - `POST /ask/baseline`: Executes baseline vector retrieval + answer generation.
+  - `POST /ingest`: Accepts PDF file upload with optional `x-gemini-api-key` header, runs parsing & embedding, returns document summary.
+  - `POST /ingest-multiple`: Batch upload endpoint for multiple PDFs.
+  - `POST /ask/hybrid`: Executes multi-agent LangGraph workflow with optional `api_key` payload.
+  - `POST /ask/baseline`: Executes baseline vector retrieval + answer generation with optional `api_key` payload.
   - `GET /health`: Health check endpoint.
-- **Streamlit Demo UI**: Side-by-side comparison interface showing conventional vs hybrid RAG answers, retrieved chunks, routing reasoning, and generated aggregation pipelines.
+- **Streamlit Demo UI**:
+  - **Dynamic In-Browser API Key**: Users can enter their own Google Gemini API key via a sidebar input without requiring backend env edits.
+  - **Side-by-Side Evaluation**: Live side-by-side comparison interface showing conventional vs hybrid RAG answers, retrieved chunks, routing reasoning, and generated aggregation pipelines.
+  - **Knowledge Vault**: Document manager for switching between active PDFs and inspecting structured table schema catalogs.
 
-### 2.6 Evaluation & Setup Scripts (`scripts/create_indexes.py`, `scripts/run_eval.py`, `tests/eval_questions.json`)
-- Programmatic `$vectorSearch` search index creation and polling for readiness.
-- Evaluation test runner calculating accuracy scores across question types.
+### 2.6 LLM Resilience & Dynamic Client Management (`app/llm.py`)
+- **Dynamic GenAI Client**: Dynamically instantiates Google GenAI client per user request using user-provided API key or environment fallback.
+- **Multi-Model Fallback**: Automatically cascades across alternative models (`gemini-2.5-flash` -> `gemini-2.5-flash-lite` -> `gemini-3.5-flash` -> `gemini-flash-lite-latest`) upon quota exhaustion.
+- **Rate-Limit Backoff**: Parses server retry delays and performs exponential backoff for batch embedding and generation calls.
+
+### 2.7 Storage & Cloud Deployment Resiliency
+- **TLS/SSL Handshake Compatibility**: PyMongo configured with `tlsCAFile=certifi.where()` ensuring reliable connectivity on modern macOS and cloud container environments (Streamlit Community Cloud).
+- **Evaluation & Setup Scripts** (`scripts/create_indexes.py`, `scripts/run_eval.py`, `tests/eval_questions.json`): Programmatic search index creation and evaluation benchmark runner.
 
 ## 3. Technology Stack & Dependencies
 - Python 3.10+
 - `pymongo>=4.7`
+- `certifi>=2024.2.2`
 - `google-genai>=1.0`
 - `langgraph>=0.2`
 - `pdfplumber>=0.11`
@@ -107,8 +117,10 @@ This project implements a multi-agent Hybrid Retrieval-Augmented Generation (RAG
 
 ## 4. Verification & Testing Strategy
 1. Unit and module verification for parsing, multi-page merging, and guarded aggregation execution.
-2. Vector Search Index verification on MongoDB Atlas.
-3. Test ingestion with sample PDF document.
-4. FastAPI endpoint validation (`/health`, `/ingest`, `/ask/hybrid`, `/ask/baseline`).
-5. Evaluation questions benchmark execution comparing baseline vs hybrid accuracy.
-6. Streamlit UI launch and manual query testing.
+2. Dynamic API key parameter handling in request models and client factories.
+3. Vector Search Index verification on MongoDB Atlas.
+4. Test ingestion with sample PDF document.
+5. FastAPI endpoint validation (`/health`, `/ingest`, `/ask/hybrid`, `/ask/baseline`).
+6. Evaluation questions benchmark execution comparing baseline vs hybrid accuracy.
+7. Streamlit UI launch, user API key input verification, and side-by-side query testing.
+

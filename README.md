@@ -21,10 +21,13 @@ A next-generation multi-agent Hybrid Retrieval-Augmented Generation (RAG) system
   - **Table Agent**: Generates and executes MongoDB aggregation pipelines with iterative error-correction and filter-relaxation loops.
   - **Combiner Node**: Synthesizes the final answer with page citations `(p. N)` and table references.
 - **Knowledge Vault & Multi-Document Support**:
-  - Batch upload multiple PDFs.
-  - Interactive document management and schema inspector.
+  - Batch upload multiple PDFs with automatic multi-file ingestion.
+  - Interactive document switcher and table schema catalog inspector.
+- **Dynamic In-Browser API Key & Quota Resilience**:
+  - Direct user-facing Gemini API key input in the Streamlit UI — no local `.env` configuration needed for sharing.
+  - Multi-model fallback (`gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-3.5-flash`, `gemini-flash-lite-latest`) with automatic exponential backoff retry for rate limits.
 - **Side-by-Side Evaluation**:
-  - Real-time comparison between Conventional Baseline RAG and Agentic Hybrid RAG.
+  - Real-time comparison between Conventional Baseline RAG and Agentic Hybrid RAG with citations and pipeline inspection.
 
 ---
 
